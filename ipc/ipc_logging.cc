@@ -27,6 +27,10 @@
 #include <unistd.h>
 #endif
 
+#if defined(OS_ANDROID)
+#include <android/log.h>
+#endif
+
 #ifdef IPC_MESSAGE_LOG_ENABLED
 
 using base::Time;
@@ -251,6 +255,7 @@ void Logging::Log(const LogData& data) {
     double dispatch_delay =
         (Time::FromInternalValue(data.dispatch) -
          Time::FromInternalValue(data.sent)).InSecondsF();
+#if !defined(OS_ANDROID)
     fprintf(stderr,
             "ipc %s %d %s %s%s %s%s\n  %18.5f %s%18.5f %s%18.5f%s\n",
             data.channel.c_str(),
@@ -267,6 +272,25 @@ void Logging::Log(const LogData& data) {
             Time::FromInternalValue(data.dispatch).ToDoubleT(),
             ANSIEscape(ANSI_COLOR_RESET)
             );
+#else
+    __android_log_print(ANDROID_LOG_INFO, "Chromium",
+            "ipc %s %d %s %s%s %s%s\n  %18.5f %s%18.5f %s%18.5f%s\n",
+            data.channel.c_str(),
+            data.routing_id,
+            data.flags.c_str(),
+            ANSIEscape(sender_ ? ANSI_COLOR_BLUE : ANSI_COLOR_CYAN),
+            message_name.c_str(),
+            ANSIEscape(ANSI_COLOR_RESET),
+            data.params.c_str(),
+            Time::FromInternalValue(data.sent).ToDoubleT(),
+            ANSIEscape(DelayColor(receive_delay)),
+            Time::FromInternalValue(data.receive).ToDoubleT(),
+            ANSIEscape(DelayColor(dispatch_delay)),
+            Time::FromInternalValue(data.dispatch).ToDoubleT(),
+            ANSIEscape(ANSI_COLOR_RESET)
+            );
+#endif  // !defined(OS_ANDROID)
+
   }
 }
 
