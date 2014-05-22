@@ -24,6 +24,8 @@
           'ipc_channel_posix.h',
           'ipc_channel_proxy.cc',
           'ipc_channel_proxy.h',
+          'ipc_channel_proxy_pair_map.cc',
+          'ipc_channel_proxy_pair_map.h',
           'ipc_channel_reader.cc',
           'ipc_channel_reader.h',
           'ipc_channel_win.cc',

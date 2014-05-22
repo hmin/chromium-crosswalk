@@ -11,6 +11,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "ipc/ipc_channel_proxy.h"
+#include "ipc/ipc_channel_proxy_pair_map.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_macros.h"
@@ -423,6 +424,15 @@ void ChannelProxy::Init(const IPC::ChannelHandle& channel_handle,
                         bool create_pipe_now) {
   DCHECK(CalledOnValidThread());
   DCHECK(!did_init_);
+
+  ChannelProxyPair& pair =
+      ChannelProxyPairMap::GetInstance()->GetPair(channel_handle.name);
+
+  if (mode & Channel::MODE_SERVER_FLAG)
+    pair.server = this;
+  if (mode & Channel::MODE_CLIENT_FLAG)
+    pair.client = this;
+
 #if defined(OS_POSIX)
   // When we are creating a server on POSIX, we need its file descriptor
   // to be created immediately so that it can be accessed and passed
@@ -475,6 +485,41 @@ bool ChannelProxy::Send(Message* message) {
 #ifdef IPC_MESSAGE_LOG_ENABLED
   Logging::GetInstance()->OnSendMessage(message, context_->channel_id());
 #endif
+
+  ChannelProxyPair pair =
+      ChannelProxyPairMap::GetInstance()->GetPair(context_->channel_id_);
+
+  // Both server and client channel proxy are not null, it means the app is
+  // running in single process mode. We have a shortcut way to send out the
+  // IPC message instead of serializing/deserializing message to post/receive
+  // over socket fd or pipe fd.
+  if (pair.server && pair.client) {
+    DLOG(INFO) << "No IPC mode is turned on";
+
+    ChannelProxy* server_proxy = pair.server;
+    ChannelProxy* client_proxy = pair.client;
+
+    ChannelProxy::Context* context = NULL;
+
+    // Determine the context of peer proxy.
+    if (server_proxy == this) { // For server channel proxy
+      context = client_proxy->context();
+    }
+
+    if (client_proxy == this) { // For client channel proxy
+      context = server_proxy->context();
+    }
+
+    if (context) {
+      // We directly post a task to the peer's IO thread.
+      context->ipc_task_runner()->PostTask(
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&ChannelProxy::Context::OnMessageReceived),
+                   context, *message));
+      delete message;
+      return true;
+    }
+  }
 
   context_->ipc_task_runner()->PostTask(
       FROM_HERE,
