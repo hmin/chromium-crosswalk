@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/base_switches.h"
 #include "base/compiler_specific.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
@@ -425,13 +427,18 @@ void ChannelProxy::Init(const IPC::ChannelHandle& channel_handle,
   DCHECK(CalledOnValidThread());
   DCHECK(!did_init_);
 
-  ChannelProxyPair& pair =
-      ChannelProxyPairMap::GetInstance()->GetPair(channel_handle.name);
+  base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
+  if (cmdline->HasSwitch(switches::kByPassIPC)) {
 
-  if (mode & Channel::MODE_SERVER_FLAG)
-    pair.server = this;
-  if (mode & Channel::MODE_CLIENT_FLAG)
-    pair.client = this;
+    LOG(INFO) << "Enable bypassing IPC mode";
+    ChannelProxyPair& pair =
+        ChannelProxyPairMap::GetInstance()->GetPair(channel_handle.name);
+
+    if (mode & Channel::MODE_SERVER_FLAG)
+      pair.server = this;
+    if (mode & Channel::MODE_CLIENT_FLAG)
+      pair.client = this;
+  }
 
 #if defined(OS_POSIX)
   // When we are creating a server on POSIX, we need its file descriptor
@@ -486,38 +493,41 @@ bool ChannelProxy::Send(Message* message) {
   Logging::GetInstance()->OnSendMessage(message, context_->channel_id());
 #endif
 
-  ChannelProxyPair pair =
-      ChannelProxyPairMap::GetInstance()->GetPair(context_->channel_id_);
+  base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
+  if (cmdline->HasSwitch(switches::kByPassIPC)) {
+    ChannelProxyPair pair =
+        ChannelProxyPairMap::GetInstance()->GetPair(context_->channel_id_);
 
-  // Both server and client channel proxy are not null, it means the app is
-  // running in single process mode. We have a shortcut way to send out the
-  // IPC message instead of serializing/deserializing message to post/receive
-  // over socket fd or pipe fd.
-  if (pair.server && pair.client) {
-    DLOG(INFO) << "No IPC mode is turned on";
+    // Both server and client channel proxy are not null, it means the app is
+    // running in single process mode. We have a shortcut way to send out the
+    // IPC message instead of serializing/deserializing message to post/receive
+    // over socket fd or pipe fd.
+    if (pair.server && pair.client) {
+      DLOG(INFO) << "No IPC mode is turned on";
 
-    ChannelProxy* server_proxy = pair.server;
-    ChannelProxy* client_proxy = pair.client;
+      ChannelProxy* server_proxy = pair.server;
+      ChannelProxy* client_proxy = pair.client;
 
-    ChannelProxy::Context* context = NULL;
+      ChannelProxy::Context* context = NULL;
 
-    // Determine the context of peer proxy.
-    if (server_proxy == this) { // For server channel proxy
-      context = client_proxy->context();
-    }
+      // Determine the context of peer proxy.
+      if (server_proxy == this) { // For server channel proxy
+        context = client_proxy->context();
+      }
 
-    if (client_proxy == this) { // For client channel proxy
-      context = server_proxy->context();
-    }
+      if (client_proxy == this) { // For client channel proxy
+        context = server_proxy->context();
+      }
 
-    if (context) {
-      // We directly post a task to the peer's IO thread.
-      context->ipc_task_runner()->PostTask(
-        FROM_HERE,
-        base::Bind(base::IgnoreResult(&ChannelProxy::Context::OnMessageReceived),
-                   context, *message));
-      delete message;
-      return true;
+      if (context) {
+        // We directly post a task to the peer's IO thread.
+        context->ipc_task_runner()->PostTask(
+          FROM_HERE,
+          base::Bind(base::IgnoreResult(&ChannelProxy::Context::OnMessageReceived),
+                     context, *message));
+        delete message;
+        return true;
+      }
     }
   }
 

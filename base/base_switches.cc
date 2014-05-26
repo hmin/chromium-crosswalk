@@ -59,6 +59,8 @@ const char kProfilerTiming[]                = "profiler-timing";
 // chrome://profiler.
 const char kProfilerTimingDisabledValue[]   = "0";
 
+const char kByPassIPC[] = "bypass-ipc";
+
 #if defined(OS_POSIX)
 // Used for turning on Breakpad crash reporting in a debug environment where
 // crash reporting is typically compiled but disabled.

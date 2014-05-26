@@ -23,6 +23,7 @@ extern const char kTraceToConsole[];
 extern const char kV[];
 extern const char kVModule[];
 extern const char kWaitForDebugger[];
+extern const char kByPassIPC[];
 
 #if defined(OS_POSIX)
 extern const char kEnableCrashReporterForTesting[];
